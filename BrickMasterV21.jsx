@@ -1,9 +1,9 @@
-// Maçon Hero / BrickMaster - V20 - serious game de maçonnerie (version éducative pro)
+// Maçon Hero / BrickMaster - V21 - serious game de maçonnerie (version éducative pro)
 // Fichier unique React. Aucun dégradé SVG à identifiant (évite les bugs d'ID dupliqués).
 // Persistance : Capacitor Preferences si présent, sinon localStorage.
 import React, { useState, useEffect, useRef, useMemo } from "react";
 
-const VERSION = "V20";
+const VERSION = "V21";
 // Visuels Creative Claw : placez le dossier "assets" à côté de index.html (Vite : dans /public).
 const ASSET_BASE = "./assets/";
 const IMG = {
@@ -64,60 +64,6 @@ function sfx(type) {
       o.connect(g); g.connect(actx.destination); o.start(t + d); o.stop(t + d + 0.2);
     });
   } catch (e) { /* audio non disponible */ }
-}
-
-// ---------- Voix de Carlos et Miguel (gratuites : synthèse vocale de l'appareil) ----------
-let voiceOn = true;
-let voicePrefs = { carlos: "", miguel: "" };
-try {
-  voiceOn = window.localStorage.getItem("mh_voice") !== "off";
-  voicePrefs = { ...voicePrefs, ...(JSON.parse(window.localStorage.getItem("mh_voice_prefs") || "{}")) };
-} catch (e) { /* défauts */ }
-const MALE_RE = /thomas|paul|henri|mathieu|nicolas|daniel|claude|antoine|guillaume|jean|louis|gérard|gerard|fabrice|remi|rémy|male|homme|fr-x-frd|fr-x-frb|frd-|frb-/i;
-const FEMALE_RE = /amélie|amelie|audrey|aurélie|aurelie|julie|marie|hortense|denise|celine|céline|virginie|sylvie|chantal|female|femme|fr-x-frc|fr-x-vlf|frc-|vlf-/i;
-const PROFILES = { carlos: { pitch: 0.75, rate: 0.95, fallbackPitch: 0.45 }, miguel: { pitch: 1.05, rate: 1.06, fallbackPitch: 0.8 } };
-function frVoices() {
-  try { return (window.speechSynthesis ? window.speechSynthesis.getVoices() : []).filter((v) => /^fr/i.test(v.lang)); } catch (e) { return []; }
-}
-function voiceFor(who) {
-  const fr = frVoices();
-  if (!fr.length) return null;
-  const chosen = fr.find((v) => v.name === voicePrefs[who]);
-  if (chosen) return chosen;
-  const males = fr.filter((v) => MALE_RE.test(v.name) && !FEMALE_RE.test(v.name));
-  if (who === "carlos") return males[0] || fr.find((v) => !FEMALE_RE.test(v.name)) || fr[0];
-  const c = voiceFor("carlos");
-  return males.find((v) => !c || v.name !== c.name) || males[0] || fr.find((v) => !c || v.name !== c.name) || fr[0];
-}
-function setVoicePref(who, name) {
-  voicePrefs = { ...voicePrefs, [who]: name };
-  try { window.localStorage.setItem("mh_voice_prefs", JSON.stringify(voicePrefs)); } catch (e) { /* rien */ }
-}
-if (typeof window !== "undefined" && window.speechSynthesis) { window.speechSynthesis.getVoices(); window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices(); }
-function speakAs(who, text, force) {
-  if ((!voiceOn && !force) || !text || !PROFILES[who]) return;
-  const prof = PROFILES[who];
-  const clean = text.replace(/[^\p{L}\p{N}\s.,;:!?'’«»()-]/gu, "");
-  try {
-    const TTS = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.TextToSpeech;
-    if (TTS) { TTS.stop().catch(() => {}); TTS.speak({ text: clean, lang: "fr-FR", rate: prof.rate, pitch: prof.fallbackPitch }).catch(() => {}); return; }
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(clean);
-    const v = voiceFor(who);
-    u.lang = "fr-FR"; u.rate = prof.rate;
-    if (v) u.voice = v;
-    const male = v && (voicePrefs[who] === v.name || (MALE_RE.test(v.name) && !FEMALE_RE.test(v.name)));
-    u.pitch = male ? prof.pitch : prof.fallbackPitch;
-    window.speechSynthesis.speak(u);
-  } catch (e) { /* synthèse vocale indisponible */ }
-}
-function stopVoice() {
-  try {
-    const TTS = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.TextToSpeech;
-    if (TTS) TTS.stop().catch(() => {});
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
-  } catch (e) { /* rien */ }
 }
 
 // ---------- Utilitaires ----------
@@ -193,6 +139,8 @@ const GlobalStyle = () => (
     @keyframes mh-float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-6px) } }
     @keyframes mh-shake { 0%,100% { transform: translateX(0) } 25% { transform: translateX(-6px) } 75% { transform: translateX(6px) } }
     @keyframes mh-sweep { from { transform: translateY(-10px) } to { transform: translateY(330px) } }
+    @keyframes mh-shrink { from { transform: scale(2.6) translateY(-20%); opacity: .4 } to { transform: none; opacity: 1 } }
+    .mh-shrink { animation: mh-shrink .7s cubic-bezier(.2,.8,.2,1) both; transform-origin: bottom left }
     .mh-pop { animation: mh-pop .45s ease-out both }
     .mh-float { animation: mh-float 2.4s ease-in-out infinite }
     .mh-shake { animation: mh-shake .3s ease-in-out 2 }
@@ -208,7 +156,7 @@ function Worker(props) {
   const [broken, setBroken] = useState(false);
   const key = who === "carlos" ? (mood === "angry" ? "carlos_angry" : "carlos_ok") : who === "miguel" ? "miguel" : `player_${gender === "f" ? "f" : "h"}${hasEpi(epi) ? "_epi" : ""}`;
   if (!broken) {
-    return <img src={asset(IMG[key])} alt={who} onError={() => setBroken(true)} draggable={false} style={{ height: size, width: "auto", display: "block", filter: "drop-shadow(0 4px 4px rgba(0,0,0,.25))", transform: mood === "happy" && who !== "carlos" ? "rotate(-2deg)" : undefined }} />;
+    return <img src={asset(IMG[key])} alt={who} onError={() => setBroken(true)} draggable={false} style={{ height: size, width: "auto", display: "block", transition: "height .35s ease", filter: "drop-shadow(0 4px 4px rgba(0,0,0,.25))", transform: mood === "happy" && who !== "carlos" ? "rotate(-2deg)" : undefined }} />;
   }
   return <WorkerSVG {...props} />;
 }
@@ -268,8 +216,6 @@ function Dialogue({ lines, profile, onDone }) {
     const t = setTimeout(() => setSt((s) => ({ ...s, n: Math.min(lines[s.i].text.length, s.n + 2) })), 22);
     return () => clearTimeout(t);
   }, [st, full, lines]);
-  useEffect(() => { speakAs(lines[st.i].who, lines[st.i].text); }, [st.i]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => () => stopVoice(), []);
   const tap = () => {
     sfx("tap");
     if (!full) { setSt((s) => ({ ...s, n: lines[s.i].text.length })); return; }
@@ -277,18 +223,22 @@ function Dialogue({ lines, profile, onDone }) {
   };
   const speakers = [...new Set(lines.map((l) => l.who))];
   const names = { carlos: "Carlos", miguel: "Miguel", player: (profile && profile.name) || "Toi" };
+  const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+  const vw = typeof window !== "undefined" ? Math.min(window.innerWidth, 480) : 400;
+  const n = speakers.length;
+  const big = Math.round(Math.min(vh * 0.64, (vw - 16) / (n === 1 ? 0.75 : n === 2 ? 1.0 : 1.18), 560));
+  const small = Math.round(big * 0.62);
   return (
-    <div onClick={tap} style={{ cursor: "pointer", userSelect: "none" }}>
-      <div style={{ ...card, position: "relative", minHeight: 110, marginBottom: 16, border: `3px solid ${C.dark}` }}>
+    <div onClick={tap} style={{ cursor: "pointer", userSelect: "none", minHeight: "calc(100dvh - 70px)", display: "flex", flexDirection: "column" }}>
+      <div style={{ ...card, position: "relative", minHeight: 96, border: `3px solid ${C.dark}`, zIndex: 3 }}>
         <div style={{ fontWeight: 900, color: line.who === "carlos" ? "#C0392B" : line.who === "miguel" ? "#2E86DE" : C.orange, marginBottom: 4 }}>{names[line.who]}</div>
         <div style={{ fontSize: 18, lineHeight: 1.35, color: C.ink }}>{line.text.slice(0, st.n)}</div>
         <div style={{ position: "absolute", right: 12, bottom: 6, fontSize: 13, color: C.grey }}>{full ? (st.i < lines.length - 1 ? "Touchez ▸" : "Touchez pour commencer ▸") : ""}</div>
-        <div style={{ position: "absolute", bottom: -14, left: line.who === speakers[0] ? 50 : "auto", right: line.who === speakers[0] ? "auto" : 50, width: 0, height: 0, borderLeft: "12px solid transparent", borderRight: "12px solid transparent", borderTop: `14px solid ${C.dark}` }} />
       </div>
-      <div style={{ display: "flex", justifyContent: speakers.length > 1 ? "space-between" : "flex-start", alignItems: "flex-end", padding: "0 10px" }}>
-        {speakers.map((w) => (
-          <div key={w} style={{ transition: "transform .25s, opacity .25s", transform: line.who === w ? "scale(1.08)" : "scale(.92)", opacity: line.who === w ? 1 : 0.6 }}>
-            <Worker who={w} gender={profile && profile.gender} epi={w === "player" ? profile && profile.epi : undefined} size={speakers.length > 2 ? 120 : 150} mood={line.who === w ? line.mood || "ok" : w === "carlos" ? "angry" : "happy"} />
+      <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "flex-end", marginTop: 8 }}>
+        {speakers.map((w, idx) => (
+          <div key={w} style={{ marginLeft: idx ? -big * 0.22 : 0, zIndex: line.who === w ? 2 : 1, filter: line.who === w ? "none" : "brightness(.65)", transition: "filter .3s" }}>
+            <Worker who={w} gender={profile && profile.gender} epi={w === "player" ? profile && profile.epi : undefined} size={line.who === w ? big : small} mood={line.who === w ? line.mood || "ok" : w === "carlos" ? "angry" : "happy"} />
           </div>
         ))}
       </div>
@@ -325,26 +275,28 @@ function Quiz({ questions, onDone, timer = 0, lives = 0, figure }) {
   return (
     <div>
       {figure}
-      <div style={{ display: "flex", justifyContent: "space-between", color: C.ink, fontWeight: 800, margin: "8px 2px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", color: C.ink, fontWeight: 800, margin: "4px 0", background: "rgba(255,255,255,.85)", borderRadius: 8, padding: "2px 8px", fontSize: 14 }}>
         <span>Question {i + 1}/{questions.length}</span>
         {lives ? <span>{"❤️".repeat(Math.max(0, left))}{"🤍".repeat(Math.max(0, lives - left))}</span> : null}
         {timer ? <span style={{ color: t <= 5 ? C.red : C.ink }}>⏱ {t}s</span> : null}
       </div>
-      <div style={{ ...card, marginBottom: 10 }}><div style={{ fontSize: 19, fontWeight: 800, color: C.ink }}>{q.q}</div></div>
-      <div style={{ display: "grid", gap: 8 }}>
+      <div style={{ ...card, padding: "10px 12px", marginBottom: 8 }}><div style={{ fontSize: 17, fontWeight: 800, color: C.ink, lineHeight: 1.3 }}>{q.q}</div></div>
+      <div style={{ display: "grid", gap: 6, gridTemplateColumns: q.opts.every((o) => o.length <= 26) ? "1fr 1fr" : "1fr", paddingBottom: pick !== null ? 150 : 0 }}>
         {q.opts.map((o, k) => {
           let bg = "#fff";
           if (pick !== null && k === q.a) bg = "#D5F5E3";
           else if (pick === k) bg = "#FADBD8";
           return (
-            <button key={k} onClick={() => choose(k)} style={{ ...btn(bg, C.ink), textAlign: "left", border: `2px solid ${pick !== null && k === q.a ? C.green : "#ddd"}` }}>{o}</button>
+            <button key={k} onClick={() => choose(k)} style={{ ...btn(bg, C.ink), fontSize: 15, padding: "10px 12px", minHeight: 48, textAlign: "left", border: `2px solid ${pick !== null && k === q.a ? C.green : "#ddd"}` }}>{o}</button>
           );
         })}
       </div>
       {pick !== null && (
-        <div className="mh-pop" style={{ ...card, marginTop: 10, background: pick === q.a ? "#EAFAF1" : "#FDEDEC" }}>
-          <b>{pick === q.a ? "✅ Exact !" : pick === -1 ? "⏱ Temps écoulé." : "❌ Non."}</b> {q.why}
-          <div style={{ marginTop: 10 }}><button style={btn()} onClick={next}>Suivant ▸</button></div>
+        <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 20, display: "flex", justifyContent: "center", padding: "0 8px 8px" }}>
+          <div className="mh-pop" style={{ ...card, width: "100%", maxWidth: 464, boxSizing: "border-box", padding: "10px 12px", fontSize: 15, background: pick === q.a ? "#EAFAF1" : "#FDEDEC", border: `2px solid ${pick === q.a ? C.green : C.red}`, boxShadow: "0 -6px 20px rgba(0,0,0,.25)" }}>
+            <b>{pick === q.a ? "✅ Exact !" : pick === -1 ? "⏱ Temps écoulé." : "❌ Non."}</b> {q.why}
+            <button style={{ ...btn(), width: "100%", marginTop: 8 }} onClick={next}>Suivant ▸</button>
+          </div>
         </div>
       )}
     </div>
@@ -353,11 +305,10 @@ function Quiz({ questions, onDone, timer = 0, lives = 0, figure }) {
 
 // ---------- Composants de niveau : petits outils ----------
 function Coach({ who, text, mood }) {
-  useEffect(() => { speakAs(who, text); }, [who, text]);
   return (
-    <div style={{ display: "flex", alignItems: "flex-end", gap: 8, margin: "8px 0" }}>
-      <Worker who={who} size={84} mood={mood} />
-      <div className="mh-pop" key={text} style={{ ...card, flex: 1, padding: 10, fontSize: 15, border: `2px solid ${who === "carlos" ? "#C0392B" : "#2E86DE"}` }}>{text}</div>
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 8, margin: "4px 0 6px" }}>
+      <div className="mh-shrink"><Worker who={who} size={66} mood={mood} /></div>
+      <div className="mh-pop" key={text} style={{ ...card, flex: 1, padding: "8px 10px", fontSize: 14, border: `2px solid ${who === "carlos" ? "#C0392B" : "#2E86DE"}` }}>{text}</div>
     </div>
   );
 }
@@ -576,7 +527,7 @@ function LvlMur({ onFinish }) {
 // ---------- Niveau 3 : lecture de plan ----------
 function PlanSVG() {
   return (
-    <svg viewBox="0 0 320 220" width="100%" style={{ ...card, padding: 4, boxSizing: "border-box" }}>
+    <svg viewBox="0 0 320 220" width="100%" style={{ ...card, padding: 2, boxSizing: "border-box", maxHeight: "27dvh", display: "block" }}>
       <rect x="0" y="0" width="320" height="220" fill="#EAF2F8" />
       {[...Array(16)].map((_, i) => <line key={`v${i}`} x1={i * 20} y1="0" x2={i * 20} y2="220" stroke="#D6EAF8" />)}
       {[...Array(11)].map((_, i) => <line key={`h${i}`} x1="0" y1={i * 20} x2="320" y2={i * 20} stroke="#D6EAF8" />)}
@@ -898,15 +849,17 @@ function LvlBoss({ onFinish }) {
 const LEVEL_COMPONENTS = { 1: LvlMortier, 2: LvlMur, 3: LvlPlan, 4: LvlBeton, 5: LvlFer, 6: LvlEnduit, 7: LvlCarrelage, 8: LvlCloison, 9: LvlEscalier, 10: LvlBoss };
 
 // ---------- Écrans ----------
-function Shell({ children, title, onBack, right, bg = C.sky, bgImage }) {
-  const bgStyle = bgImage ? { backgroundImage: `linear-gradient(rgba(255,255,255,.12), rgba(255,255,255,.12)), url(${asset(bgImage)})`, backgroundSize: "cover", backgroundPosition: "center", backgroundAttachment: "fixed", backgroundColor: typeof bg === "string" && bg.startsWith("#") ? bg : C.sky } : { background: bg };
+function Shell({ children, title, onBack, right, bg = C.sky, bgImage, dim = false }) {
   return (
-    <div className="mh-app" style={{ minHeight: "100vh", ...bgStyle, fontFamily: FONT, color: C.ink }}>
-      <div style={{ maxWidth: 480, margin: "0 auto", padding: "10px 14px 30px" }}>
+    <div className="mh-app" style={{ minHeight: "100dvh", position: "relative", overflowX: "hidden", background: bg, fontFamily: FONT, color: C.ink }}>
+      {bgImage && (
+        <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 0, backgroundImage: `url(${asset(bgImage)})`, backgroundSize: "cover", backgroundPosition: "center", filter: dim ? "grayscale(1) brightness(.5) blur(1.5px)" : "none", transform: dim ? "scale(1.03)" : "none", transition: "filter .8s ease, transform .8s ease" }} />
+      )}
+      <div style={{ position: "relative", zIndex: 1, maxWidth: 480, margin: "0 auto", padding: "8px 12px 14px" }}>
         {(title || onBack) && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            {onBack && <button style={{ ...btn("#fff", C.ink), padding: "8px 12px" }} onClick={() => { stopVoice(); onBack(); }}>◂</button>}
-            <div style={{ flex: 1, fontWeight: 900, fontSize: 20, background: "rgba(255,255,255,.88)", borderRadius: 12, padding: "6px 10px" }}>{title}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+            {onBack && <button style={{ ...btn("#fff", C.ink), padding: "6px 12px" }} onClick={onBack}>◂</button>}
+            <div style={{ flex: 1, fontWeight: 900, fontSize: 18, background: "rgba(255,255,255,.9)", borderRadius: 12, padding: "5px 10px" }}>{title}</div>
             {right}
           </div>
         )}
@@ -918,16 +871,10 @@ function Shell({ children, title, onBack, right, bg = C.sky, bgImage }) {
 
 function MuteBtn() {
   const [m, setM] = useState(muted);
-  const [v, setV] = useState(voiceOn);
-  return (
-    <span style={{ display: "flex", gap: 6 }}>
-      <button title="Voix de Carlos et Miguel" style={{ ...btn("#fff", C.ink), padding: "8px 10px", opacity: v ? 1 : 0.5 }} onClick={() => { voiceOn = !voiceOn; setV(voiceOn); if (!voiceOn) stopVoice(); try { window.localStorage.setItem("mh_voice", voiceOn ? "on" : "off"); } catch (e) { /* rien */ } }}>{v ? "🗣" : "🤐"}</button>
-      <button title="Sons" style={{ ...btn("#fff", C.ink), padding: "8px 10px" }} onClick={() => { muted = !muted; setM(muted); }}>{m ? "🔇" : "🔊"}</button>
-    </span>
-  );
+  return <button title="Sons" style={{ ...btn("#fff", C.ink), padding: "6px 10px" }} onClick={() => { muted = !muted; setM(muted); }}>{m ? "🔇" : "🔊"}</button>;
 }
 
-function Home({ learner, profile, onStart, onSwitch, onTrainer, onVoices }) {
+function Home({ learner, profile, onStart, onSwitch, onTrainer }) {
   return (
     <Shell bgImage={IMG.bg_home} bg={C.sky}>
       <div style={{ textAlign: "center", marginTop: 20 }}>
@@ -941,48 +888,9 @@ function Home({ learner, profile, onStart, onSwitch, onTrainer, onVoices }) {
         <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
           <button style={{ ...btn(), fontSize: 22, padding: 16 }} onClick={onStart}>{learner ? `▶ Continuer (${learner})` : "▶ Commencer"}</button>
           {learner && <button style={btn("#fff", C.ink)} onClick={onSwitch}>👷 Nouveau stagiaire</button>}
-          <button style={btn("#fff", C.ink)} onClick={onVoices}>🗣 Voix des personnages</button>
           <button style={btn(C.dark)} onClick={onTrainer}>📊 Espace formateur</button>
         </div>
         <div style={{ marginTop: 16, color: C.grey, fontSize: 12 }}>BrickMaster {VERSION}</div>
-      </div>
-    </Shell>
-  );
-}
-
-function VoiceSettings({ onBack }) {
-  const [list, setList] = useState(frVoices());
-  const [prefs, setPrefs] = useState(voicePrefs);
-  const [on, setOn] = useState(voiceOn);
-  useEffect(() => {
-    const t = setInterval(() => setList(frVoices()), 700);
-    return () => clearInterval(t);
-  }, []);
-  const samples = { carlos: "Alors, le nouveau ? Sur mon chantier, on ne rigole pas !", miguel: "Bem-vindo ! Ne t'inquiète pas, tout ira bem." };
-  return (
-    <Shell title="Voix des personnages" onBack={onBack}>
-      <div style={{ ...card, marginBottom: 10 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 800 }}>
-          <input type="checkbox" checked={on} onChange={(e) => { voiceOn = e.target.checked; setOn(voiceOn); try { window.localStorage.setItem("mh_voice", voiceOn ? "on" : "off"); } catch (er) { /* rien */ } }} style={{ width: 22, height: 22 }} />
-          Voix activées
-        </label>
-        <div style={{ color: C.grey, fontSize: 13, marginTop: 6 }}>Voix gratuites de ton appareil : {list.length} voix française(s) trouvée(s). Choisis la plus grave pour Carlos, puis teste.</div>
-      </div>
-      {["carlos", "miguel"].map((who) => (
-        <div key={who} style={{ ...card, marginBottom: 10, display: "flex", gap: 10, alignItems: "center" }}>
-          <Worker who={who} size={90} mood={who === "carlos" ? "angry" : "happy"} />
-          <div style={{ flex: 1 }}>
-            <b>{who === "carlos" ? "Carlos" : "Miguel"}</b>
-            <select value={prefs[who]} onChange={(e) => { setVoicePref(who, e.target.value); setPrefs({ ...voicePrefs }); }} style={{ width: "100%", fontSize: 15, padding: 8, borderRadius: 10, margin: "6px 0", fontFamily: FONT }}>
-              <option value="">Automatique (voix masculine si disponible)</option>
-              {list.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}
-            </select>
-            <button style={{ ...btn(C.orange), padding: "8px 12px" }} onClick={() => speakAs(who, samples[who], true)}>▶ Tester</button>
-          </div>
-        </div>
-      ))}
-      <div style={{ ...card, background: "#FEF9E7", fontSize: 13 }}>
-        Sur Android, si toutes les voix sont féminines : Paramètres → Gestion globale / Accessibilité → Synthèse vocale → moteur Google → Installer les données vocales → Français, et choisis une voix masculine. Sur iPhone : Réglages → Accessibilité → Contenu énoncé → Voix → Français → Thomas.
       </div>
     </Shell>
   );
@@ -1034,7 +942,6 @@ function Profile({ initial, onDone, onBack }) {
 
 const NODES = [[60, 540], [170, 520], [290, 490], [250, 405], [115, 390], [70, 300], [190, 280], [300, 215], [205, 140], [95, 75]];
 function MapScreen({ learner, data, onPlay, onHome, autoNext, onCancelAuto }) {
-  useEffect(() => { stopVoice(); }, []);
   const stars = (data && data.stars) || {};
   const unlocked = (id) => id === 1 || (stars[id - 1] || 0) >= 1;
   const current = Math.max(1, ...LEVELS.filter((l) => unlocked(l.id)).map((l) => l.id));
@@ -1091,11 +998,11 @@ function LevelScreen({ level, profile, onFinish, onBack }) {
   if (level.id === 1) lines.push({ who: other, text: "Ne l'écoute pas trop. Respire, lis bien la consigne, et tout ira bem.", mood: "happy" });
   lines.push({ who: "player", text: level.id === 10 ? "Je suis prêt" + (profile.gender === "f" ? "e" : "") + ". Allons-y, chef !" : "Compris. Je m'y mets !", mood: "happy" });
   return (
-    <Shell title={`${level.id}. ${level.name}`} onBack={onBack} right={<MuteBtn />} bgImage={BG_LEVEL[level.id]}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: -2, marginBottom: 6 }}>
-        <span style={{ color: C.ink, fontWeight: 800, background: "rgba(255,255,255,.85)", borderRadius: 8, padding: "2px 8px", flex: 1 }}>{level.skill}</span>
-        {briefed && <span style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(255,255,255,.85)", borderRadius: 10, padding: "2px 8px 2px 2px", fontWeight: 800 }}><Worker who="player" gender={profile.gender} epi={profile.epi} size={44} />{profile.name}</span>}
-      </div>
+    <Shell title={`${level.id}. ${level.name}`} onBack={onBack} right={<MuteBtn />} bgImage={BG_LEVEL[level.id]} dim={!briefed}>
+      {briefed && <div className="mh-pop" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        <span style={{ color: C.ink, fontWeight: 800, fontSize: 14, background: "rgba(255,255,255,.85)", borderRadius: 8, padding: "2px 8px", flex: 1 }}>{level.skill}</span>
+        <span className="mh-shrink" style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(255,255,255,.85)", borderRadius: 10, padding: "2px 8px 2px 2px", fontWeight: 800, fontSize: 14, transformOrigin: "top right" }}><Worker who="player" gender={profile.gender} epi={profile.epi} size={34} />{profile.name}</span>
+      </div>}
       {!briefed
         ? <Dialogue lines={lines} profile={profile} onDone={() => { t0.current = Date.now(); setBriefed(true); }} />
         : <Comp onFinish={(r) => onFinish({ ...r, durationSec: Math.round((Date.now() - t0.current) / 1000) })} />}
@@ -1199,7 +1106,7 @@ function Trainer({ sessions, onBack, onClear }) {
 }
 
 // ---------- Application ----------
-export default function BrickMasterV20() {
+export default function BrickMasterV21() {
   const [loaded, setLoaded] = useState(false);
   const [screen, setScreen] = useState("home");
   const [learners, setLearners] = useState({});
@@ -1245,11 +1152,10 @@ export default function BrickMasterV20() {
   return (
     <>
       <GlobalStyle />
-      {screen === "home" && <Home learner={current} profile={profile} onStart={() => setScreen(profile ? "map" : "profile")} onSwitch={() => { setCurrent(null); setScreen("profile"); }} onTrainer={() => setScreen("trainer")} onVoices={() => setScreen("voices")} />}
-      {screen === "voices" && <VoiceSettings onBack={() => setScreen("home")} />}
+      {screen === "home" && <Home learner={current} profile={profile} onStart={() => setScreen(profile ? "map" : "profile")} onSwitch={() => { setCurrent(null); setScreen("profile"); }} onTrainer={() => setScreen("trainer")} />}
       {screen === "profile" && <Profile initial={profile} onDone={saveProfile} onBack={() => setScreen("home")} />}
       {screen === "intro" && (
-        <Shell title="Premier jour" right={<MuteBtn />} bgImage={IMG.bg_home}>
+        <Shell title="Premier jour" right={<MuteBtn />} bgImage={IMG.bg_home} dim>
           <Dialogue profile={profile} onDone={() => { setAutoNext(1); setScreen("map"); }} lines={[
             { who: "carlos", text: `Alors c'est toi, ${profile && profile.gender === "f" ? "la nouvelle" : "le nouveau"} ? Moi c'est Carlos, chef de chantier depuis vingt ans. Ici, on ne rigole pas.`, mood: "angry" },
             { who: "miguel", text: `Bem-vindo, ${profile ? profile.name : ""} ! Moi c'est Miguel. Carlos aboie, mais il ne mord pas… enfin, presque.`, mood: "happy" },
