@@ -1,9 +1,9 @@
-// Maçon Hero / BrickMaster - V19 - serious game de maçonnerie (version éducative pro)
+// Maçon Hero / BrickMaster - V20 - serious game de maçonnerie (version éducative pro)
 // Fichier unique React. Aucun dégradé SVG à identifiant (évite les bugs d'ID dupliqués).
 // Persistance : Capacitor Preferences si présent, sinon localStorage.
 import React, { useState, useEffect, useRef, useMemo } from "react";
 
-const VERSION = "V19";
+const VERSION = "V20";
 // Visuels Creative Claw : placez le dossier "assets" à côté de index.html (Vite : dans /public).
 const ASSET_BASE = "./assets/";
 const IMG = {
@@ -66,30 +66,49 @@ function sfx(type) {
   } catch (e) { /* audio non disponible */ }
 }
 
-// ---------- Voix de Carlos (gratuite : synthèse vocale du système) ----------
+// ---------- Voix de Carlos et Miguel (gratuites : synthèse vocale de l'appareil) ----------
 let voiceOn = true;
-try { voiceOn = window.localStorage.getItem("mh_voice") !== "off"; } catch (e) { /* défaut : activée */ }
-let frVoice = null;
-function pickVoice() {
-  try {
-    const vs = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
-    const fr = vs.filter((v) => /^fr/i.test(v.lang));
-    const male = fr.find((v) => /thomas|paul|henri|mathieu|nicolas|daniel|claude|male|homme/i.test(v.name));
-    frVoice = male || fr[0] || null;
-  } catch (e) { frVoice = null; }
+let voicePrefs = { carlos: "", miguel: "" };
+try {
+  voiceOn = window.localStorage.getItem("mh_voice") !== "off";
+  voicePrefs = { ...voicePrefs, ...(JSON.parse(window.localStorage.getItem("mh_voice_prefs") || "{}")) };
+} catch (e) { /* défauts */ }
+const MALE_RE = /thomas|paul|henri|mathieu|nicolas|daniel|claude|antoine|guillaume|jean|louis|gérard|gerard|fabrice|remi|rémy|male|homme|fr-x-frd|fr-x-frb|frd-|frb-/i;
+const FEMALE_RE = /amélie|amelie|audrey|aurélie|aurelie|julie|marie|hortense|denise|celine|céline|virginie|sylvie|chantal|female|femme|fr-x-frc|fr-x-vlf|frc-|vlf-/i;
+const PROFILES = { carlos: { pitch: 0.75, rate: 0.95, fallbackPitch: 0.45 }, miguel: { pitch: 1.05, rate: 1.06, fallbackPitch: 0.8 } };
+function frVoices() {
+  try { return (window.speechSynthesis ? window.speechSynthesis.getVoices() : []).filter((v) => /^fr/i.test(v.lang)); } catch (e) { return []; }
 }
-if (typeof window !== "undefined" && window.speechSynthesis) { pickVoice(); window.speechSynthesis.onvoiceschanged = pickVoice; }
-function speakCarlos(text) {
-  if (!voiceOn || !text) return;
+function voiceFor(who) {
+  const fr = frVoices();
+  if (!fr.length) return null;
+  const chosen = fr.find((v) => v.name === voicePrefs[who]);
+  if (chosen) return chosen;
+  const males = fr.filter((v) => MALE_RE.test(v.name) && !FEMALE_RE.test(v.name));
+  if (who === "carlos") return males[0] || fr.find((v) => !FEMALE_RE.test(v.name)) || fr[0];
+  const c = voiceFor("carlos");
+  return males.find((v) => !c || v.name !== c.name) || males[0] || fr.find((v) => !c || v.name !== c.name) || fr[0];
+}
+function setVoicePref(who, name) {
+  voicePrefs = { ...voicePrefs, [who]: name };
+  try { window.localStorage.setItem("mh_voice_prefs", JSON.stringify(voicePrefs)); } catch (e) { /* rien */ }
+}
+if (typeof window !== "undefined" && window.speechSynthesis) { window.speechSynthesis.getVoices(); window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices(); }
+function speakAs(who, text, force) {
+  if ((!voiceOn && !force) || !text || !PROFILES[who]) return;
+  const prof = PROFILES[who];
   const clean = text.replace(/[^\p{L}\p{N}\s.,;:!?'’«»()-]/gu, "");
   try {
     const TTS = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.TextToSpeech;
-    if (TTS) { TTS.stop().catch(() => {}); TTS.speak({ text: clean, lang: "fr-FR", rate: 0.95, pitch: 0.7 }).catch(() => {}); return; }
+    if (TTS) { TTS.stop().catch(() => {}); TTS.speak({ text: clean, lang: "fr-FR", rate: prof.rate, pitch: prof.fallbackPitch }).catch(() => {}); return; }
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(clean);
-    u.lang = "fr-FR"; u.pitch = 0.7; u.rate = 0.98;
-    if (frVoice) u.voice = frVoice;
+    const v = voiceFor(who);
+    u.lang = "fr-FR"; u.rate = prof.rate;
+    if (v) u.voice = v;
+    const male = v && (voicePrefs[who] === v.name || (MALE_RE.test(v.name) && !FEMALE_RE.test(v.name)));
+    u.pitch = male ? prof.pitch : prof.fallbackPitch;
     window.speechSynthesis.speak(u);
   } catch (e) { /* synthèse vocale indisponible */ }
 }
@@ -249,7 +268,7 @@ function Dialogue({ lines, profile, onDone }) {
     const t = setTimeout(() => setSt((s) => ({ ...s, n: Math.min(lines[s.i].text.length, s.n + 2) })), 22);
     return () => clearTimeout(t);
   }, [st, full, lines]);
-  useEffect(() => { if (lines[st.i].who === "carlos") speakCarlos(lines[st.i].text); }, [st.i]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { speakAs(lines[st.i].who, lines[st.i].text); }, [st.i]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => stopVoice(), []);
   const tap = () => {
     sfx("tap");
@@ -334,7 +353,7 @@ function Quiz({ questions, onDone, timer = 0, lives = 0, figure }) {
 
 // ---------- Composants de niveau : petits outils ----------
 function Coach({ who, text, mood }) {
-  useEffect(() => { if (who === "carlos") speakCarlos(text); }, [who, text]);
+  useEffect(() => { speakAs(who, text); }, [who, text]);
   return (
     <div style={{ display: "flex", alignItems: "flex-end", gap: 8, margin: "8px 0" }}>
       <Worker who={who} size={84} mood={mood} />
@@ -902,13 +921,13 @@ function MuteBtn() {
   const [v, setV] = useState(voiceOn);
   return (
     <span style={{ display: "flex", gap: 6 }}>
-      <button title="Voix de Carlos" style={{ ...btn("#fff", C.ink), padding: "8px 10px", opacity: v ? 1 : 0.5 }} onClick={() => { voiceOn = !voiceOn; setV(voiceOn); if (!voiceOn) stopVoice(); try { window.localStorage.setItem("mh_voice", voiceOn ? "on" : "off"); } catch (e) { /* rien */ } }}>{v ? "🗣" : "🤐"}</button>
+      <button title="Voix de Carlos et Miguel" style={{ ...btn("#fff", C.ink), padding: "8px 10px", opacity: v ? 1 : 0.5 }} onClick={() => { voiceOn = !voiceOn; setV(voiceOn); if (!voiceOn) stopVoice(); try { window.localStorage.setItem("mh_voice", voiceOn ? "on" : "off"); } catch (e) { /* rien */ } }}>{v ? "🗣" : "🤐"}</button>
       <button title="Sons" style={{ ...btn("#fff", C.ink), padding: "8px 10px" }} onClick={() => { muted = !muted; setM(muted); }}>{m ? "🔇" : "🔊"}</button>
     </span>
   );
 }
 
-function Home({ learner, profile, onStart, onSwitch, onTrainer }) {
+function Home({ learner, profile, onStart, onSwitch, onTrainer, onVoices }) {
   return (
     <Shell bgImage={IMG.bg_home} bg={C.sky}>
       <div style={{ textAlign: "center", marginTop: 20 }}>
@@ -922,9 +941,48 @@ function Home({ learner, profile, onStart, onSwitch, onTrainer }) {
         <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
           <button style={{ ...btn(), fontSize: 22, padding: 16 }} onClick={onStart}>{learner ? `▶ Continuer (${learner})` : "▶ Commencer"}</button>
           {learner && <button style={btn("#fff", C.ink)} onClick={onSwitch}>👷 Nouveau stagiaire</button>}
+          <button style={btn("#fff", C.ink)} onClick={onVoices}>🗣 Voix des personnages</button>
           <button style={btn(C.dark)} onClick={onTrainer}>📊 Espace formateur</button>
         </div>
         <div style={{ marginTop: 16, color: C.grey, fontSize: 12 }}>BrickMaster {VERSION}</div>
+      </div>
+    </Shell>
+  );
+}
+
+function VoiceSettings({ onBack }) {
+  const [list, setList] = useState(frVoices());
+  const [prefs, setPrefs] = useState(voicePrefs);
+  const [on, setOn] = useState(voiceOn);
+  useEffect(() => {
+    const t = setInterval(() => setList(frVoices()), 700);
+    return () => clearInterval(t);
+  }, []);
+  const samples = { carlos: "Alors, le nouveau ? Sur mon chantier, on ne rigole pas !", miguel: "Bem-vindo ! Ne t'inquiète pas, tout ira bem." };
+  return (
+    <Shell title="Voix des personnages" onBack={onBack}>
+      <div style={{ ...card, marginBottom: 10 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 800 }}>
+          <input type="checkbox" checked={on} onChange={(e) => { voiceOn = e.target.checked; setOn(voiceOn); try { window.localStorage.setItem("mh_voice", voiceOn ? "on" : "off"); } catch (er) { /* rien */ } }} style={{ width: 22, height: 22 }} />
+          Voix activées
+        </label>
+        <div style={{ color: C.grey, fontSize: 13, marginTop: 6 }}>Voix gratuites de ton appareil : {list.length} voix française(s) trouvée(s). Choisis la plus grave pour Carlos, puis teste.</div>
+      </div>
+      {["carlos", "miguel"].map((who) => (
+        <div key={who} style={{ ...card, marginBottom: 10, display: "flex", gap: 10, alignItems: "center" }}>
+          <Worker who={who} size={90} mood={who === "carlos" ? "angry" : "happy"} />
+          <div style={{ flex: 1 }}>
+            <b>{who === "carlos" ? "Carlos" : "Miguel"}</b>
+            <select value={prefs[who]} onChange={(e) => { setVoicePref(who, e.target.value); setPrefs({ ...voicePrefs }); }} style={{ width: "100%", fontSize: 15, padding: 8, borderRadius: 10, margin: "6px 0", fontFamily: FONT }}>
+              <option value="">Automatique (voix masculine si disponible)</option>
+              {list.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}
+            </select>
+            <button style={{ ...btn(C.orange), padding: "8px 12px" }} onClick={() => speakAs(who, samples[who], true)}>▶ Tester</button>
+          </div>
+        </div>
+      ))}
+      <div style={{ ...card, background: "#FEF9E7", fontSize: 13 }}>
+        Sur Android, si toutes les voix sont féminines : Paramètres → Gestion globale / Accessibilité → Synthèse vocale → moteur Google → Installer les données vocales → Français, et choisis une voix masculine. Sur iPhone : Réglages → Accessibilité → Contenu énoncé → Voix → Français → Thomas.
       </div>
     </Shell>
   );
@@ -1141,7 +1199,7 @@ function Trainer({ sessions, onBack, onClear }) {
 }
 
 // ---------- Application ----------
-export default function BrickMasterV19() {
+export default function BrickMasterV20() {
   const [loaded, setLoaded] = useState(false);
   const [screen, setScreen] = useState("home");
   const [learners, setLearners] = useState({});
@@ -1187,7 +1245,8 @@ export default function BrickMasterV19() {
   return (
     <>
       <GlobalStyle />
-      {screen === "home" && <Home learner={current} profile={profile} onStart={() => setScreen(profile ? "map" : "profile")} onSwitch={() => { setCurrent(null); setScreen("profile"); }} onTrainer={() => setScreen("trainer")} />}
+      {screen === "home" && <Home learner={current} profile={profile} onStart={() => setScreen(profile ? "map" : "profile")} onSwitch={() => { setCurrent(null); setScreen("profile"); }} onTrainer={() => setScreen("trainer")} onVoices={() => setScreen("voices")} />}
+      {screen === "voices" && <VoiceSettings onBack={() => setScreen("home")} />}
       {screen === "profile" && <Profile initial={profile} onDone={saveProfile} onBack={() => setScreen("home")} />}
       {screen === "intro" && (
         <Shell title="Premier jour" right={<MuteBtn />} bgImage={IMG.bg_home}>
